@@ -4,6 +4,8 @@
 package learned_league_to_anki
 
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+import java.io.File
 
 class App {
     val greeting: String
@@ -12,42 +14,57 @@ class App {
         }
 }
 
+class Card(val question: String, val answer: String, val season: String, val questionNumber: String, val matchDay: String? = null) {
+    override fun toString(): String {
+        return "${question}\t${answer.toLowerCase()}\t${season}\t${matchDay?:""}\t${questionNumber}"
+    }
+}
+
+
 fun main(args: Array<String>) {
     // Built in
 //    println(App().greeting)
-
-    // From https://www.kotlintips.com/scraping-the-web-using-kotlin/ - JSoup example
-//    val url = "https://news.ycombinator.com"
-//    val doc = Jsoup.connect(url).get()
-//
-//    val title = doc.title()
-//    val links = doc.select("a[href]")
-//
-//    // Display title
-//    println(title)
-//
-//    // Display all links
-//    links.forEach { link ->
-//        println(link.attr("href"))
-//    }
 
     var url = if (args.size > 0) args[0] else null
     var outputFile = if (args.size > 1) args[1] else null
 
     // Disable these once the app works!
-    url = "https://learnedleague.com/oneday.php?texasrevolution"
+    url = "https://learnedleague.com/oneday.php?thefrenchrevolution"
     outputFile = "/tmp/output"
 
     val doc = Jsoup.connect(url).get()
 
-    // Proof of concept: print the question and answer for all 12 1D questions.
-    // Note that this behavior is all 1D-specific.
+    val cards = makeCards(doc)
+    val output = cards.map { it.toString() }.joinToString("\n")
+    File(outputFile).writeText(output)
+}
+
+private fun makeCards(doc: Document): MutableList<Card> {
+    if (doc.location().contains("oneday.php")) {
+        return oneDay(doc);
+    } else {
+        throw Exception("Can't parse that type of match!")
+    }
+}
+
+// Proof of concept: print the question and answer for all 12 1D questions.
+// Note that this behavior is all 1D-specific.
+private fun oneDay(doc: Document): MutableList<Card> {
+    val cards = mutableListOf<Card>()
     for (i in 1..12) {
+        val title = doc.select("h1").text()
+                // Normal format in the document is "${date}: LL One-Day Special: ${title}"
+                // The format I want is "${title} 1D"
+                .replaceBeforeLast(':', "")
+                .substring(1) + " 1D"
+
         // The div that has the questions and answers in it.
         val questionWrapper = doc.select("div:has(div > div > #Q${i})")
         val question = questionWrapper.select("p")[i - 1]
         val answer = questionWrapper.select("#Q${i}ANS")
-        println(question.text())
-        println(answer.text())
+
+        val card = Card(question.text(), answer.text(), title, i.toString())
+        cards.add(card)
     }
+    return cards
 }
