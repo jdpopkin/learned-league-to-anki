@@ -29,7 +29,7 @@ fun main(args: Array<String>) {
     var outputFile = if (args.size > 1) args[1] else null
 
     // Disable these once the app works!
-    url = "https://learnedleague.com/oneday.php?thefrenchrevolution"
+    url = "https://learnedleague.com/mini/match.php?llgkbc"
     outputFile = "/tmp/output"
 
     val doc = Jsoup.connect(url).get()
@@ -39,9 +39,22 @@ fun main(args: Array<String>) {
     File(outputFile).writeText(output)
 }
 
+fun isMiniLeague(doc: Document): Boolean {
+    return doc.location().contains("/mini/")
+}
+
+fun isSingleMiniLeagueMatch(doc: Document): Boolean {
+   return isMiniLeague(doc) && doc.location().contains(Regex("&[0-9]+$"))
+}
+
+// We should probably pass a URL instead of a doc here - we branch based on URL only.
 private fun makeCards(doc: Document): MutableList<Card> {
     if (doc.location().contains("oneday.php")) {
-        return oneDay(doc);
+        return oneDay(doc)
+    } else if (isSingleMiniLeagueMatch(doc)) {
+        return miniLeagueMatch(doc)
+    } else if (isMiniLeague(doc)) {
+        return fullMiniLeague(doc)
     } else {
         throw Exception("Can't parse that type of match!")
     }
@@ -67,4 +80,46 @@ private fun oneDay(doc: Document): MutableList<Card> {
         cards.add(card)
     }
     return cards
+}
+
+private fun miniLeagueMatch(doc: Document): MutableList<Card> {
+    val cards = mutableListOf<Card>()
+    for (i in 1..6) {
+        val title = doc.select("h1").text()
+                // Normal format in the document is "${date}: ${title} Match Day ${matchDay} Results"
+                // The format I want is "${title} 1D"
+                .replaceBeforeLast(':', "")
+                .replaceAfter("Match Day", "")
+                .substring(1) + " ML"
+
+        // Match day = the number after the last '&' in URL
+        val matchDay = doc.location().replace(Regex(".*&"), "")
+
+        // The div that has the questions and answers in it.
+        // One more level of nesting than in 1Ds.
+        val questionWrapper = doc.select("div:has(div > div > div > #Q${i})")
+        // ind-Q20 is the class on each question
+        val question = questionWrapper.select("div.ind-Q20")[i - 1]
+        val answer = questionWrapper.select("#Q${i}ANS")
+
+        val card = Card(question.text(), answer.text(), title, i.toString(), matchDay)
+        cards.add(card)
+    }
+    return cards
+}
+
+fun fullMiniLeague(doc: Document): MutableList<Card> {
+    val result = mutableListOf<Card>()
+
+    // Note ML championships (MD 12) aren't visible without authenticating
+    for (i in 1..11) {
+        val url = doc.location() + "&${i}"
+        Thread.sleep(2000)
+
+        val nextDoc = Jsoup.connect(url).get()
+        val nextCards = miniLeagueMatch(nextDoc)
+        result.addAll(nextCards)
+    }
+
+    return result
 }
