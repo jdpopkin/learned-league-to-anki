@@ -29,7 +29,7 @@ fun main(args: Array<String>) {
     var outputFile = if (args.size > 1) args[1] else null
 
     // Disable these once the app works!
-    url = "https://learnedleague.com/mini/match.php?llgkbc"
+    url = "https://learnedleague.com/seasons.php?77"
     outputFile = "/tmp/output"
 
     val doc = Jsoup.connect(url).get()
@@ -55,9 +55,56 @@ private fun makeCards(doc: Document): MutableList<Card> {
         return miniLeagueMatch(doc)
     } else if (isMiniLeague(doc)) {
         return fullMiniLeague(doc)
+    } else if (doc.location().contains("/match.php")) {
+        return singleMatchDay(doc)
+    } else if (doc.location().contains("/seasons.php")) {
+        return fullSeason(doc)
     } else {
         throw Exception("Can't parse that type of match!")
     }
+}
+
+private fun fullSeason(doc: Document): MutableList<Card> {
+    val result = mutableListOf<Card>()
+
+    for (i in 1..25) {
+        val url = doc.location().replace("seasons", "match") + "&${i}"
+        Thread.sleep(2000)
+
+        val nextDoc = Jsoup.connect(url).get()
+        val nextCards = singleMatchDay(nextDoc)
+        result.addAll(nextCards)
+    }
+
+    return result
+}
+
+private fun singleMatchDay(doc: Document): MutableList<Card> {
+    // Warning: ML copypasta; not clear if it'll work.
+    val cards = mutableListOf<Card>()
+    for (i in 1..6) {
+        val title = doc.select("h1").text()
+                // Normal format in the document is "${date}: ${title} Match Day ${matchDay} Results"
+                // The format I want is "${title} 1D"
+                .replaceBeforeLast(':', "")
+                .replaceAfter("Match Day", "")
+                .replace("Match Day", "")
+                .substring(1)
+
+        // Match day = the number after the last '&' in URL
+        val matchDay = doc.location().replace(Regex(".*&"), "")
+
+        // The div that has the questions and answers in it.
+        // Note that answer div IDs contain a spurious `1` after the question-number
+        val questionWrapper = doc.select("div:has(div > div > div > #Q${i}1)")
+        // ind-Q20 is the class on each question
+        val question = questionWrapper.select("div.ind-Q20")[i - 1]
+        val answer = questionWrapper.select("#Q${i}1ANS")
+
+        val card = Card(question.text(), answer.text(), title, i.toString(), matchDay)
+        cards.add(card)
+    }
+    return cards
 }
 
 // Proof of concept: print the question and answer for all 12 1D questions.
@@ -90,6 +137,7 @@ private fun miniLeagueMatch(doc: Document): MutableList<Card> {
                 // The format I want is "${title} 1D"
                 .replaceBeforeLast(':', "")
                 .replaceAfter("Match Day", "")
+                .replace("Match Day", "")
                 .substring(1) + " ML"
 
         // Match day = the number after the last '&' in URL
